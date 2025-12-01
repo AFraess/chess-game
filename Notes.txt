@@ -1,0 +1,3 @@
+To run just run the python and it should open up the most recent tab or whatever.
+
+Currently we need to fix up the models to use no or different textures.
