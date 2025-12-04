@@ -1,11 +1,10 @@
-// ============================
-// File: game.js  (full, updated with Pause menu: Esc to toggle)
-// ============================
+// File: game.js
+
 class Game {
   constructor(state) {
     this.state = state;
 
-    // containers
+    // data holders
     this.spawnedObjects = [];
     this.collidableObjects = [];
     this.enemies = [];
@@ -21,16 +20,17 @@ class Game {
     this.SPAWN_SAFETY_TIME = 0.2;
     this.SHOT_COOLDOWN = 1.5;
 
-    // enemy timers (dynamic intervals via score)
+    // timers
     this.enemyMoveTimer = 0.0;
     this.enemySpawnTimer = 0.0;
 
-    // dynamic speedup settings
+    // difficulty
     this.ENEMY_MOVE_BASE = 1.5;
     this.ENEMY_MOVE_MIN  = 0.9;
     this.ENEMY_SPAWN_BASE = 5.0;
     this.ENEMY_SPAWN_MIN  = 2.8;
     this.SPEEDUP_STEP = 0.1;
+    this.maxDifficultyLocked = false;
 
     // debug
     this.DEBUG_COLLIDERS = true;
@@ -41,7 +41,7 @@ class Game {
     this.player = null;
     this.facingDir = vec3.fromValues(0, 0, 1);
     this.isGameOver = false;
-    this.isPaused = false;               // <—— NEW
+    this.isPaused = false;
     this.timeAccumulator = 0;
     this.timeSinceStart = 0;
     this.lastShotAt = -Infinity;
@@ -50,20 +50,21 @@ class Game {
     this.fireballPrefab = null;
     this.rookPrefab = null;
 
-    // UI: cooldown
+    // ui
     this.cooldownBar = null;
     this.cooldownFill = null;
 
-    // UI: scoring/speed
     this.score = 0;
     this.highScore = 0;
     this.scoreBox = null;
     this.scoreText = null;
     this.highText = null;
     this.speedRow = null;
+    this.speedRowText = null;
+    this.maxToggleBtn = null;
     this._lastSpeedString = "";
+    this._speedDefaultColor = "#e5e7eb";
 
-    // UI: game over
     this.gameOverOverlay = null;
     this.gameOverScoreEl = null;
     this.gameOverHighEl = null;
@@ -71,13 +72,16 @@ class Game {
     this.retryBtn = null;
     this._shownGameOver = false;
 
-    // UI: pause
-    this.pauseOverlay = null;            // <—— NEW
-    this.continueBtn = null;             // <—— NEW
-    this.resetBtn = null;                // <—— NEW
+    this.pauseOverlay = null;
+    this.continueBtn = null;
+    this.resetBtn = null;
+
+    // board alignment
+    this.BOARD_EPSILON_Y = 0.02;
+    this.boardTopY = 0.0;
   }
 
-  /* ---------------- transforms ---------------- */
+  // gets world position
   getWorldPos(object) {
     const m = object?.model?.modelMatrix;
     if (m) {
@@ -89,6 +93,7 @@ class Game {
     return vec3.fromValues(p[0], p[1], p[2]);
   }
 
+  // gets world center
   getWorldCenter(object) {
     const m = object?.model?.modelMatrix;
     const c = object?.centroid || vec3.fromValues(0, 0, 0);
@@ -101,6 +106,7 @@ class Game {
     return vec3.fromValues(p[0] + c[0], p[1] + c[1], p[2] + c[2]);
   }
 
+  // sets world center
   setWorldCenter(object, worldCenter) {
     const c = object?.centroid || vec3.fromValues(0,0,0);
     if (!object.model) object.model = { position: vec3.create(), rotation: mat4.create(), scale: vec3.fromValues(1,1,1) };
@@ -111,12 +117,10 @@ class Game {
     );
   }
 
-  getForwardWorld() {
-    const f = vec3.clone(this.facingDir);
-    vec3.normalize(f, f);
-    return f;
-  }
+  // gets forward vector
+  getForwardWorld() { const f = vec3.clone(this.facingDir); vec3.normalize(f, f); return f; }
 
+  // gets fireball spawn point
   getMuzzleWorldPosition() {
     const center = this.getWorldCenter(this.player);
     const forward = this.getForwardWorld();
@@ -131,18 +135,25 @@ class Game {
     return muzzle;
   }
 
-  /* ---------------- grid helpers ---------------- */
+  // converts world to tile
   worldToTileXZ(v) { return { ix: Math.round(v[0] / this.TILE_SIZE), iz: Math.round(v[2] / this.TILE_SIZE) }; }
+
+  // converts tile to world
   tileToWorldXZ(ix, iz, y) { return vec3.fromValues(ix * this.TILE_SIZE, y, iz * this.TILE_SIZE); }
+
+  // chebyshev distance
   chebyshevTileDistance(aix, aiz, bix, biz) { return Math.max(Math.abs(aix - bix), Math.abs(aiz - biz)); }
+
+  // grid bounds
   gridBounds() { const h = Math.floor(this.GRID_SIZE / 2); return { min: -h, max: h }; }
+
+  // in-bounds check
   inBounds(ix, iz) { const b=this.gridBounds(); return ix>=b.min && ix<=b.max && iz>=b.min && iz<=b.max; }
 
-  getTileOfObject(obj) {
-    const c = this.getWorldCenter(obj);
-    return this.worldToTileXZ(c);
-  }
+  // tile of object
+  getTileOfObject(obj) { const c = this.getWorldCenter(obj); return this.worldToTileXZ(c); }
 
+  // tile occupation check
   isOccupied(ix, iz, except = null) {
     const p = this.getTileOfObject(this.player);
     if (!except || except !== this.player) {
@@ -156,13 +167,14 @@ class Game {
     return false;
   }
 
+  // enemy tile move
   moveEnemyToTile(enemy, ix, iz) {
     const curY = this.getWorldCenter(enemy)[1];
     const target = this.tileToWorldXZ(ix, iz, curY);
     this.setWorldCenter(enemy, target);
   }
 
-  /* ---------------- collisions ---------------- */
+  // adds aabb collider
   addAABBCollider(object, halfExtents) {
     object.collider = {
       type: "AABB",
@@ -173,6 +185,7 @@ class Game {
     this.collidableObjects.push(object);
   }
 
+  // updates aabb to world
   updateWorldAABB(object) {
     const c = object.collider; if (!c || c.type !== "AABB") return;
     const center = this.getWorldCenter(object);
@@ -181,6 +194,7 @@ class Game {
     c.worldMin[2] = center[2] - c.half[2]; c.worldMax[2] = center[2] + c.half[2];
   }
 
+  // aabb intersection
   aabbIntersect(a, b) {
     return (
       a.worldMin[0] <= b.worldMax[0] && a.worldMax[0] >= b.worldMin[0] &&
@@ -189,6 +203,7 @@ class Game {
     );
   }
 
+  // removes object from scene
   removeFromScene(object) {
     const i1 = this.state.objects.indexOf(object); if (i1 >= 0) this.state.objects.splice(i1, 1);
     const i2 = this.collidableObjects.indexOf(object); if (i2 >= 0) this.collidableObjects.splice(i2, 1);
@@ -202,18 +217,16 @@ class Game {
     }
   }
 
-  /* ---------------- debug colliders ---------------- */
+  // creates visible collider
   async createDebugBoxFor(object, kind) {
     if (!this.DEBUG_COLLIDERS || !object?.collider) return null;
     if (this._debugBoxes.has(object)) return this._debugBoxes.get(object);
-
     const c = object.collider;
     const center = this.getWorldCenter(object);
     const color =
       kind === "player" ? vec3.fromValues(0.1, 0.9, 0.2) :
       kind === "enemy"  ? vec3.fromValues(0.95, 0.2, 0.2) :
                           vec3.fromValues(0.95, 0.85, 0.2);
-
     const box = await spawnObject({
       name: `DEBUG_AABB_${object.name}`,
       type: "cube",
@@ -227,20 +240,19 @@ class Game {
       position: vec3.fromValues(center[0], center[1], center[2]),
       scale: vec3.fromValues(c.half[0] * 2.0, c.half[1] * 2.0, c.half[2] * 2.0)
     }, this.state);
-
     this.ensureTransformAPI(box);
     box.debug = true;
     this._debugBoxes.set(object, box);
     return box;
   }
 
+  // syncs visible collider
   updateDebugBox(object) {
     if (!this.DEBUG_COLLIDERS || !object?.collider) return;
     const box = this._debugBoxes.get(object);
     if (!box) return;
     const c = object.collider;
     const center = this.getWorldCenter(object);
-
     const targetScale = vec3.fromValues(c.half[0] * 2.0, c.half[1] * 2.0, c.half[2] * 2.0);
     const curScale = box.model.scale;
     if (curScale[0] !== targetScale[0] || curScale[1] !== targetScale[1] || curScale[2] !== targetScale[2]) {
@@ -248,7 +260,6 @@ class Game {
       box.model.scale[1] = targetScale[1];
       box.model.scale[2] = targetScale[2];
     }
-
     const curPos = box.model.position;
     const dx = center[0] - curPos[0], dy = center[1] - curPos[1], dz = center[2] - curPos[2];
     if (Math.abs(dx) + Math.abs(dy) + Math.abs(dz) > 1e-6) {
@@ -256,7 +267,7 @@ class Game {
     }
   }
 
-  /* ---------------- cooldown UI ---------------- */
+  // builds cooldown bar ui
   createCooldownBarUI() {
     const host = document.createElement("div");
     Object.assign(host.style, {
@@ -270,20 +281,14 @@ class Game {
       border: "1px solid rgba(255,255,255,0.25)",
       overflow: "hidden",
       zIndex: "10000",
-      boxShadow: "0 0 0 1px rgba(0,0,0,0.35) inset",
-      backdropFilter: "blur(2px)",
-      fontFamily: "system-ui, sans-serif",
     });
-
     const fill = document.createElement("div");
     Object.assign(fill.style, {
       width: "0%",
       height: "100%",
       background: "linear-gradient(90deg, #b5b5b5, #ffffff)",
       transition: "width 80ms linear",
-      boxShadow: "0 0 8px rgba(255,0,0,0.0)",
     });
-
     const label = document.createElement("div");
     label.textContent = "Fireball";
     Object.assign(label.style, {
@@ -294,38 +299,29 @@ class Game {
       color: "rgba(255,255,255,0.8)",
       userSelect: "none",
     });
-
     host.appendChild(fill);
     host.appendChild(label);
     document.body.appendChild(host);
-
     this.cooldownBar = host;
     this.cooldownFill = fill;
   }
 
+  // updates cooldown bar
   updateCooldownBar() {
     if (!this.cooldownFill) return;
     const t = Math.min(1, Math.max(0, (this.timeSinceStart - this.lastShotAt) / this.SHOT_COOLDOWN));
     this.cooldownFill.style.width = `${Math.round(t * 100)}%`;
     const r = 255, g = Math.round(255 * (1 - t)), b = Math.round(255 * (1 - t));
     this.cooldownFill.style.background = `linear-gradient(90deg, rgb(${g},${g},${g}), rgb(${r},${g},${b}))`;
-    this.cooldownFill.style.boxShadow = t >= 1 ? "0 0 10px rgba(255,0,0,0.85)" : "0 0 8px rgba(255,0,0,0.0)";
-    this.cooldownBar.title = t >= 1 ? "Ready" : `${(this.SHOT_COOLDOWN * (1 - t)).toFixed(1)}s`;
   }
 
-  /* ---------------- Score / Highscore + Speed UI ---------------- */
-  loadHighScore() {
-    try {
-      const v = localStorage.getItem("cc_highscore");
-      const n = v ? parseInt(v, 10) : 0;
-      return Number.isFinite(n) ? n : 0;
-    } catch { return 0; }
-  }
+  // loads highscore
+  loadHighScore() { try { const v = localStorage.getItem("cc_highscore"); const n = v ? parseInt(v, 10) : 0; return Number.isFinite(n) ? n : 0; } catch { return 0; } }
 
-  saveHighScore() {
-    try { localStorage.setItem("cc_highscore", String(this.highScore)); } catch {}
-  }
+  // saves highscore
+  saveHighScore() { try { localStorage.setItem("cc_highscore", String(this.highScore)); } catch {} }
 
+  // builds score ui
   createScoreUI() {
     const box = document.createElement("div");
     Object.assign(box.style, {
@@ -347,29 +343,52 @@ class Game {
 
     const scoreEl = document.createElement("div");
     const highEl = document.createElement("div");
-    const speedEl = document.createElement("div");
+
+    const speedRow = document.createElement("div");
+    Object.assign(speedRow.style, { display: "flex", alignItems: "center", gap: "8px", marginTop: "6px" });
+
+    const speedText = document.createElement("span");
+    Object.assign(speedText.style, { fontSize: "12px", opacity: 0.95, color: this._speedDefaultColor });
+
+    const maxBtn = document.createElement("button");
+    maxBtn.textContent = "MAX";
+    Object.assign(maxBtn.style, {
+      padding: "2px 8px",
+      fontSize: "11px",
+      borderRadius: "999px",
+      border: "1px solid rgba(255,255,255,0.25)",
+      background: "rgba(55,65,81,0.8)",
+      color: "#e5e7eb",
+      cursor: "pointer",
+      lineHeight: "1.4",
+    });
+    maxBtn.title = "Lock difficulty to max (I)";
+    maxBtn.addEventListener("click", () => this.toggleMaxDifficulty());
+
+    speedRow.appendChild(speedText);
+    speedRow.appendChild(maxBtn);
 
     scoreEl.textContent = "Score: 000";
     highEl.textContent = "High:  000";
 
-    Object.assign(speedEl.style, { fontSize: "12px", opacity: 0.85, marginTop: "6px" });
-    speedEl.textContent = "⏱ Move 1.5s • Spawn 5.0s";
-
     box.appendChild(scoreEl);
     box.appendChild(highEl);
-    box.appendChild(speedEl);
+    box.appendChild(speedRow);
     document.body.appendChild(box);
 
     this.scoreBox = box;
     this.scoreText = scoreEl;
     this.highText = highEl;
-    this.speedRow = speedEl;
+    this.speedRow = speedRow;
+    this.speedRowText = speedText;
+    this.maxToggleBtn = maxBtn;
 
     this.highScore = this.loadHighScore();
     this.updateScoreUI();
     this.updateSpeedUI(true);
   }
 
+  // updates score ui
   updateScoreUI() {
     if (!this.scoreText || !this.highText) return;
     const fmt = (n) => n.toString().padStart(3, "0");
@@ -377,17 +396,33 @@ class Game {
     this.highText.textContent  = `High:  ${fmt(this.highScore)}`;
   }
 
+  // updates speed ui
   updateSpeedUI(force = false) {
-    if (!this.speedRow) return;
+    if (!this.speedRowText) return;
     const m = this.getEnemyMoveInterval();
     const s = this.getEnemySpawnInterval();
-    const txt = `⏱ Move ${m.toFixed(1)}s • Spawn ${s.toFixed(1)}s`;
+    const suffix = this.maxDifficultyLocked ? " (MAX)" : "";
+    const txt = `⏱ Move ${m.toFixed(1)}s • Spawn ${s.toFixed(1)}s${suffix}`;
     if (force || txt !== this._lastSpeedString) {
-      this.speedRow.textContent = txt;
+      this.speedRowText.textContent = txt;
       this._lastSpeedString = txt;
+    }
+    if (this.maxToggleBtn) {
+      if (this.maxDifficultyLocked) {
+        this.speedRowText.style.color = "#f7c948";
+        this.maxToggleBtn.style.background = "linear-gradient(180deg, #fbbf24, #f59e0b)";
+        this.maxToggleBtn.style.color = "#111827";
+        this.maxToggleBtn.title = "Currently MAX. Click to return.";
+      } else {
+        this.speedRowText.style.color = this._speedDefaultColor;
+        this.maxToggleBtn.style.background = "rgba(55,65,81,0.8)";
+        this.maxToggleBtn.style.color = "#e5e7eb";
+        this.maxToggleBtn.title = "Lock difficulty to max (I)";
+      }
     }
   }
 
+  // adds score
   addScore(points) {
     if (!points) return;
     this.score += points;
@@ -399,52 +434,29 @@ class Game {
     this.updateSpeedUI();
   }
 
-  /* ---------------- Game Over overlay ---------------- */
+  // builds game over ui
   createGameOverUI() {
     const overlay = document.createElement("div");
     Object.assign(overlay.style, {
-      position: "fixed",
-      inset: "0",
-      background: "rgba(0,0,0,0.65)",
-      display: "none",
-      alignItems: "center",
-      justifyContent: "center",
-      zIndex: "10001",
+      position: "fixed", inset: "0", background: "rgba(0,0,0,0.65)",
+      display: "none", alignItems: "center", justifyContent: "center", zIndex: "10001",
     });
 
     const card = document.createElement("div");
     Object.assign(card.style, {
-      minWidth: "320px",
-      maxWidth: "480px",
-      padding: "20px 24px",
-      borderRadius: "12px",
-      background: "rgba(17,24,39,0.95)",
-      color: "#e5e7eb",
-      border: "1px solid rgba(255,255,255,0.16)",
-      boxShadow: "0 10px 30px rgba(0,0,0,0.4)",
-      textAlign: "center",
+      minWidth: "320px", maxWidth: "480px", padding: "20px 24px", borderRadius: "12px",
+      background: "rgba(17,24,39,0.95)", color: "#e5e7eb",
+      border: "1px solid rgba(255,255,255,0.16)", textAlign: "center",
       fontFamily: "system-ui, sans-serif",
     });
 
     const title = document.createElement("div");
     title.textContent = "GAME OVER";
-    Object.assign(title.style, {
-      fontSize: "28px",
-      fontWeight: "800",
-      letterSpacing: "2px",
-      marginBottom: "12px",
-    });
+    Object.assign(title.style, { fontSize: "28px", fontWeight: "800", letterSpacing: "2px", marginBottom: "12px" });
 
     const badge = document.createElement("div");
     badge.textContent = "NEW HIGHSCORE!";
-    Object.assign(badge.style, {
-      display: "none",
-      marginBottom: "10px",
-      fontWeight: "800",
-      color: "#f7c948",
-      textShadow: "0 0 8px rgba(247,201,72,0.65)",
-      letterSpacing: "1px",
-    });
+    Object.assign(badge.style, { display: "none", marginBottom: "10px", fontWeight: "800", color: "#f7c948" });
 
     const score = document.createElement("div");
     const high = document.createElement("div");
@@ -454,16 +466,10 @@ class Game {
     const retry = document.createElement("button");
     retry.textContent = "Retry";
     Object.assign(retry.style, {
-      marginTop: "6px",
-      padding: "10px 16px",
-      borderRadius: "10px",
+      marginTop: "6px", padding: "10px 16px", borderRadius: "10px",
       border: "1px solid rgba(255,255,255,0.25)",
-      background: "linear-gradient(180deg, #ef4444, #b91c1c)",
-      color: "white",
-      fontSize: "15px",
-      fontWeight: "700",
-      cursor: "pointer",
-      boxShadow: "0 6px 18px rgba(220,38,38,0.35)",
+      background: "linear-gradient(180deg, #ef4444, #b91c1c)", color: "white",
+      fontSize: "15px", fontWeight: "700", cursor: "pointer",
     });
     retry.addEventListener("click", () => window.location.reload());
 
@@ -482,57 +488,38 @@ class Game {
     this.retryBtn = retry;
   }
 
+  // shows game over ui
   showGameOverUI() {
     if (!this.gameOverOverlay) this.createGameOverUI();
-
     const fmt = (n) => n.toString().padStart(3, "0");
     const isNewHigh = this.score >= this.loadHighScore();
-
-    if (isNewHigh) {
-      this.highScore = this.score;
-      this.saveHighScore();
-    } else {
-      this.highScore = this.loadHighScore();
-    }
-
+    if (isNewHigh) { this.highScore = this.score; this.saveHighScore(); }
+    else { this.highScore = this.loadHighScore(); }
     this.gameOverScoreEl.textContent = `Score: ${fmt(this.score)}`;
     this.gameOverHighEl.textContent  = `Highscore: ${fmt(this.highScore)}`;
     this.gameOverBadgeEl.style.display = isNewHigh ? "block" : "none";
-
     this.gameOverOverlay.style.display = "flex";
   }
 
-  /* ---------------- Pause overlay (Esc) ---------------- */
+  // builds pause ui
   createPauseUI() {
     const overlay = document.createElement("div");
     Object.assign(overlay.style, {
-      position: "fixed",
-      inset: "0",
-      background: "rgba(0,0,0,0.55)",
-      display: "none",
-      alignItems: "center",
-      justifyContent: "center",
-      zIndex: "10002",
+      position: "fixed", inset: "0", background: "rgba(0,0,0,0.55)",
+      display: "none", alignItems: "center", justifyContent: "center", zIndex: "10002",
     });
 
     const card = document.createElement("div");
     Object.assign(card.style, {
-      minWidth: "280px",
-      padding: "18px 22px",
-      borderRadius: "12px",
-      background: "rgba(17,24,39,0.95)",
-      color: "#e5e7eb",
-      border: "1px solid rgba(255,255,255,0.16)",
-      boxShadow: "0 10px 30px rgba(0,0,0,0.4)",
-      textAlign: "center",
+      minWidth: "280px", padding: "18px 22px", borderRadius: "12px",
+      background: "rgba(17,24,39,0.95)", color: "#e5e7eb",
+      border: "1px solid rgba(255,255,255,0.16)", textAlign: "center",
       fontFamily: "system-ui, sans-serif",
     });
 
     const title = document.createElement("div");
     title.textContent = "PAUSED";
-    Object.assign(title.style, {
-      fontSize: "22px", fontWeight: "800", letterSpacing: "1px", marginBottom: "12px",
-    });
+    Object.assign(title.style, { fontSize: "22px", fontWeight: "800", letterSpacing: "1px", marginBottom: "12px" });
 
     const btnRow = document.createElement("div");
     Object.assign(btnRow.style, { display: "flex", gap: "10px", justifyContent: "center" });
@@ -540,29 +527,19 @@ class Game {
     const cont = document.createElement("button");
     cont.textContent = "Continue";
     Object.assign(cont.style, {
-      padding: "10px 14px",
-      borderRadius: "10px",
+      padding: "10px 14px", borderRadius: "10px",
       border: "1px solid rgba(255,255,255,0.25)",
-      background: "linear-gradient(180deg, #10b981, #059669)",
-      color: "white",
-      fontSize: "14px",
-      fontWeight: "700",
-      cursor: "pointer",
-      minWidth: "110px",
+      background: "linear-gradient(180deg, #10b981, #059669)", color: "white",
+      fontSize: "14px", fontWeight: "700", cursor: "pointer", minWidth: "110px",
     });
 
     const reset = document.createElement("button");
     reset.textContent = "Reset";
     Object.assign(reset.style, {
-      padding: "10px 14px",
-      borderRadius: "10px",
+      padding: "10px 14px", borderRadius: "10px",
       border: "1px solid rgba(255,255,255,0.25)",
-      background: "linear-gradient(180deg, #ef4444, #b91c1c)",
-      color: "white",
-      fontSize: "14px",
-      fontWeight: "700",
-      cursor: "pointer",
-      minWidth: "110px",
+      background: "linear-gradient(180deg, #ef4444, #b91c1c)", color: "white",
+      fontSize: "14px", fontWeight: "700", cursor: "pointer", minWidth: "110px",
     });
 
     btnRow.appendChild(cont);
@@ -580,16 +557,16 @@ class Game {
     this.resetBtn = reset;
   }
 
+  // toggles pause
   togglePause(forceValue = null) {
     if (!this.pauseOverlay) this.createPauseUI();
     const next = forceValue === null ? !this.isPaused : !!forceValue;
-    if (this.isGameOver) return; // don't pause on top of game over
-
+    if (this.isGameOver) return;
     this.isPaused = next;
     this.pauseOverlay.style.display = this.isPaused ? "flex" : "none";
   }
 
-  /* ---------------- instantiation helpers ---------------- */
+  // ensures basic transform api
   ensureTransformAPI(obj) {
     if (!obj.model) obj.model = { position: vec3.fromValues(0,0,0), rotation: mat4.create(), scale: vec3.fromValues(1,1,1) };
     if (typeof obj.translate !== "function") {
@@ -606,6 +583,7 @@ class Game {
     }
   }
 
+  // clones from prefab
   instantiateFromPrefab(prefab, name, worldCenter, scaleVec3) {
     const copyVec3 = (v) => vec3.fromValues(v[0], v[1], v[2]);
     const obj = {
@@ -615,11 +593,7 @@ class Game {
       buffers: prefab.buffers,
       mesh: prefab.mesh,
       fileName: prefab.fileName,
-      centroid: vec3.fromValues(
-        (prefab.centroid?.[0] ?? 0),
-        (prefab.centroid?.[1] ?? 0),
-        (prefab.centroid?.[2] ?? 0)
-      ),
+      centroid: vec3.fromValues((prefab.centroid?.[0] ?? 0),(prefab.centroid?.[1] ?? 0),(prefab.centroid?.[2] ?? 0)),
       parent: null,
       material: {
         diffuse: copyVec3(prefab.material.diffuse),
@@ -643,7 +617,7 @@ class Game {
     return obj;
   }
 
-  /* ---------------- projectiles ---------------- */
+  // spawns fireball
   async spawnFireball(originWorldCenter, dir) {
     let obj;
     if (this.fireballPrefab) {
@@ -669,7 +643,6 @@ class Game {
       this.ensureTransformAPI(obj);
       this.setWorldCenter(obj, originWorldCenter);
     }
-
     this.addAABBCollider(obj, [this.FIREBALL_RADIUS, this.FIREBALL_RADIUS, this.FIREBALL_RADIUS]);
     const projectile = { object: obj, dir: vec3.normalize(vec3.create(), dir), traveled: 0, maxRange: this.FIREBALL_RANGE };
     this.projectiles.push(projectile);
@@ -678,6 +651,7 @@ class Game {
     return projectile;
   }
 
+  // explodes and applies 3x3 hit
   explodeAt(pos) {
     const killed = [];
     for (const enemy of [...this.enemies]) {
@@ -690,37 +664,33 @@ class Game {
     if (killed.length > 0) this.addScore(killed.length * 100);
   }
 
-  /* ---------------- enemy AI (move/dodge) ---------------- */
+  // sign clamp
   signClamp(v) { return v === 0 ? 0 : (v > 0 ? 1 : -1); }
 
+  // danger tile check
   isDangerTile(ix, iz) {
     for (const p of this.projectiles) {
       const pc = this.getWorldCenter(p.object);
       const pt = this.worldToTileXZ(pc);
       if (pt.ix === ix && pt.iz === iz) return true;
-
       const dx = Math.round(Math.sign(p.dir[0]));
       const dz = Math.round(Math.sign(p.dir[2]));
       const next = { ix: pt.ix + dx, iz: pt.iz + dz };
-
       if (next.ix === ix && next.iz === iz) return true;
-
       if (dx !== 0 && iz === pt.iz && Math.sign(ix - pt.ix) === dx && Math.abs(ix - pt.ix) <= 2) return true;
       if (dz !== 0 && ix === pt.ix && Math.sign(iz - pt.iz) === dz && Math.abs(iz - pt.iz) <= 2) return true;
     }
     return false;
   }
 
+  // chooses enemy step
   chooseEnemyStep(enemy) {
     const eT = this.getTileOfObject(enemy);
     const pT = this.getTileOfObject(this.player);
-
     const baseDx = this.signClamp(pT.ix - eT.ix);
     const baseDz = this.signClamp(pT.iz - eT.iz);
     const cand = { ix: eT.ix + baseDx, iz: eT.iz + baseDz };
-
     const valid = (t) => this.inBounds(t.ix, t.iz) && !this.isOccupied(t.ix, t.iz, enemy);
-
     if (valid(cand) && !this.isDangerTile(cand.ix, cand.iz)) return cand;
 
     const neighbors = [];
@@ -736,16 +706,32 @@ class Game {
         neighbors.push({ t, toward, danger, distAfter });
       }
     }
-
     neighbors.sort((a,b) => {
       if (a.danger !== b.danger) return a.danger ? 1 : -1;
       if (a.toward !== b.toward) return a.toward ? -1 : 1;
       return a.distAfter - b.distAfter;
     });
-
     return neighbors.length ? neighbors[0].t : eT;
   }
 
+  // speedup steps
+  getSpeedupSteps() { return Math.floor(this.score / 1000); }
+
+  // current move interval
+  getEnemyMoveInterval() {
+    if (this.maxDifficultyLocked) return this.ENEMY_MOVE_MIN;
+    const steps = this.getSpeedupSteps();
+    return Math.max(this.ENEMY_MOVE_MIN, this.ENEMY_MOVE_BASE - steps * this.SPEEDUP_STEP);
+  }
+
+  // current spawn interval
+  getEnemySpawnInterval() {
+    if (this.maxDifficultyLocked) return this.ENEMY_SPAWN_MIN;
+    const steps = this.getSpeedupSteps();
+    return Math.max(this.ENEMY_SPAWN_MIN, this.ENEMY_SPAWN_BASE - steps * this.SPEEDUP_STEP);
+  }
+
+  // moves enemies tick
   moveEnemiesTick() {
     for (const enemy of this.enemies) {
       const next = this.chooseEnemyStep(enemy);
@@ -755,18 +741,7 @@ class Game {
     }
   }
 
-  // dynamic intervals
-  getSpeedupSteps() { return Math.floor(this.score / 1000); }
-  getEnemyMoveInterval() {
-    const steps = this.getSpeedupSteps();
-    return Math.max(this.ENEMY_MOVE_MIN, this.ENEMY_MOVE_BASE - steps * this.SPEEDUP_STEP);
-  }
-  getEnemySpawnInterval() {
-    const steps = this.getSpeedupSteps();
-    return Math.max(this.ENEMY_SPAWN_MIN, this.ENEMY_SPAWN_BASE - steps * this.SPEEDUP_STEP);
-  }
-
-  /* ---------------- enemy spawner ---------------- */
+  // picks spawn tile
   findSpawnTile() {
     const b = this.gridBounds();
     const p = this.getTileOfObject(this.player);
@@ -783,6 +758,7 @@ class Game {
     return candidates[r];
   }
 
+  // spawns enemy at tile
   async spawnEnemyAtTile(ix, iz) {
     let obj;
     const y = this.getWorldCenter(this.player)[1];
@@ -799,8 +775,7 @@ class Game {
           diffuse: vec3.fromValues(0.85, 0.15, 0.15),
           ambient: vec3.fromValues(0.2, 0.05, 0.05),
           specular: vec3.fromValues(0.0, 0.0, 0.0),
-          n: 8.0,
-          alpha: 1.0,
+          n: 8.0, alpha: 1.0,
         },
         position: vec3.fromValues(world[0], world[1], world[2]),
         scale: vec3.fromValues(1, 1, 1),
@@ -815,12 +790,17 @@ class Game {
 
     this.addAABBCollider(obj, defaultHalf(obj));
     this.enemies.push(obj);
+
+    const worldXZ = this.tileToWorldXZ(ix, iz, 0);
+    const cur = this.getWorldCenter(obj);
+    this.setWorldCenter(obj, vec3.fromValues(worldXZ[0], cur[1], worldXZ[2]));
+    this.alignObjectToBoardTop(obj);
+
     if (this.DEBUG_COLLIDERS) await this.createDebugBoxFor(obj, "enemy");
   }
 
-  /* ---------------- controls ---------------- */
+  // binds controls
   bindControls() {
-    // Movement/Shoot (blocked when paused or game over)
     document.addEventListener("keypress", async (e) => {
       if (this.isGameOver || this.isPaused || !this.player) return;
       e.preventDefault();
@@ -830,8 +810,7 @@ class Game {
         case "w": this.player.translate(vec3.fromValues(0, 0, +1 * this.TILE_SIZE)); this.facingDir = vec3.fromValues(0, 0, +1); break;
         case "s": this.player.translate(vec3.fromValues(0, 0, -1 * this.TILE_SIZE)); this.facingDir = vec3.fromValues(0, 0, -1); break;
         case " ":
-          {
-            if (this.timeSinceStart - this.lastShotAt < this.SHOT_COOLDOWN) break;
+          if (this.timeSinceStart - this.lastShotAt >= this.SHOT_COOLDOWN) {
             this.lastShotAt = this.timeSinceStart;
             const muzzle = this.getMuzzleWorldPosition();
             await this.spawnFireball(muzzle, this.getForwardWorld());
@@ -845,23 +824,20 @@ class Game {
       }
     }, false);
 
-    // Pause toggle (Escape works more reliably on keydown)
     document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape") {
-        e.preventDefault();
-        this.togglePause(); // show/hide pause
-      }
+      if (this.isGameOver) return;
+      if (e.key === "Escape") { e.preventDefault(); this.togglePause(); return; }
+      if (e.key === "i" || e.key === "I") { e.preventDefault(); this.toggleMaxDifficulty(); }
     }, false);
   }
 
-  /* ---------------- placement ---------------- */
+  // moves object to world
   moveTo(object, worldTargetCenter) { this.setWorldCenter(object, worldTargetCenter); }
 
-  placePlayerAtGridCenter() {
-    const y = this.getWorldCenter(this.player)[1];
-    this.moveTo(this.player, vec3.fromValues(0, y, 0));
-  }
+  // places player at grid center
+  placePlayerAtGridCenter() { const y = this.getWorldCenter(this.player)[1]; this.moveTo(this.player, vec3.fromValues(0, y, 0)); }
 
+  // relocates enemies safely
   relocateEnemiesAwayFromPlayer() {
     const bounds = this.gridBounds();
     const pPos = this.getWorldCenter(this.player);
@@ -888,15 +864,15 @@ class Game {
       const taken = occ.has(`${ex},${ez}`);
       const targetTile = (tooClose || taken) ? (findSpot(ex, ez) || { ix: bounds.max, iz: bounds.max }) : { ix: ex, iz: ez };
       this.moveTo(enemy, this.tileToWorldXZ(targetTile.ix, targetTile.iz, ePos[1]));
+      this.alignObjectToBoardTop(enemy);
       occ.add(`${targetTile.ix},${targetTile.iz}`);
     }
   }
 
-  /* ---------------- debug toggle ---------------- */
+  // toggles collider visuals
   async setDebugCollidersEnabled(flag) {
     if (flag === this.DEBUG_COLLIDERS) return;
     this.DEBUG_COLLIDERS = flag;
-
     if (!flag) {
       for (const [, box] of this._debugBoxes) {
         const di = this.state.objects.indexOf(box);
@@ -906,15 +882,16 @@ class Game {
       if (this._debugUIButton) this._debugUIButton.textContent = "Show Colliders (T)";
       return;
     }
-
     if (this.player?.collider) await this.createDebugBoxFor(this.player, "player");
     for (const e of this.enemies) if (e?.collider) await this.createDebugBoxFor(e, "enemy");
     for (const p of this.projectiles) if (p.object?.collider) await this.createDebugBoxFor(p.object, "proj");
     if (this._debugUIButton) this._debugUIButton.textContent = "Hide Colliders (T)";
   }
 
+  // toggles collider visuals
   async toggleDebugColliders() { await this.setDebugCollidersEnabled(!this.DEBUG_COLLIDERS); }
 
+  // builds debug + ui
   createDebugToggleUI() {
     const btn = document.createElement("button");
     btn.textContent = this.DEBUG_COLLIDERS ? "Hide Colliders (T)" : "Show Colliders (T)";
@@ -932,19 +909,59 @@ class Game {
     this.createCooldownBarUI();
     this.createScoreUI();
     this.createGameOverUI();
-    this.createPauseUI(); // <—— add pause overlay now
+    this.createPauseUI();
   }
 
-  /* ---------------- lifecycle ---------------- */
+  // detects board top
+  detectBoardTopY() {
+    const board = getObject(this.state, "board2");
+    if (board && board.model) {
+      const center = this.getWorldCenter(board);
+      const sy = board.model.scale ? board.model.scale[1] : 1.0;
+      return center[1] + sy * 0.5;
+    }
+    const plat = getObject(this.state, "platform");
+    if (plat) {
+      const pc = this.getWorldCenter(plat);
+      return pc[1];
+    }
+    return 0.0;
+  }
+
+  // aligns object to board
+  alignObjectToBoardTop(object) {
+    if (!object) return;
+    const halfY =
+      object?.collider?.half?.[1] ??
+      (object?.model?.scale ? object.model.scale[1] * 0.5 : 0.5);
+    const cur = this.getWorldCenter(object);
+    const targetY = this.boardTopY + halfY + this.BOARD_EPSILON_Y;
+    if (Math.abs(cur[1] - targetY) < 1e-6) return;
+    const next = vec3.fromValues(cur[0], targetY, cur[2]);
+    this.setWorldCenter(object, next);
+  }
+
+  // sets max difficulty
+  setMaxDifficultyLocked(flag) {
+    this.maxDifficultyLocked = !!flag;
+    this.enemyMoveTimer = 0.0;
+    this.enemySpawnTimer = 0.0;
+    this.updateSpeedUI(true);
+  }
+
+  // toggles max difficulty
+  toggleMaxDifficulty() { this.setMaxDifficultyLocked(!this.maxDifficultyLocked); }
+
+  // custom hook
   customMethod() { console.log("Custom method!"); }
 
+  // init
   async onStart() {
     const objs = this.state.objects || [];
     this.player = getObject(this.state, "pawn") || objs.find(o => (o.name || "").toLowerCase() === "pawn");
     if (!this.player) throw new Error("Player (pawn) not found in scene.");
     this.enemies = objs.filter(o => (o.name || "").toLowerCase().startsWith("rook"));
 
-    // prefabs
     this.fireballPrefab = getObject(this.state, "fireball") || null;
     if (this.fireballPrefab?.model) {
       this.fireballPrefab.material.alpha = 0.0;
@@ -962,8 +979,13 @@ class Game {
     this.addAABBCollider(this.player, defaultHalf(this.player));
     for (const e of this.enemies) this.addAABBCollider(e, defaultHalf(e));
 
+    this.boardTopY = this.detectBoardTopY();
+
     this.placePlayerAtGridCenter();
+    this.alignObjectToBoardTop(this.player);
+
     this.relocateEnemiesAwayFromPlayer();
+    for (const e of this.enemies) this.alignObjectToBoardTop(e);
 
     if (this.DEBUG_COLLIDERS) {
       await this.createDebugBoxFor(this.player, "player");
@@ -983,10 +1005,10 @@ class Game {
     this.updateSpeedUI(true);
   }
 
+  // per-frame update
   onUpdate(deltaTime) {
     if (this.isGameOver) return;
 
-    // Pause: freeze logic/timers. Keep UI reactive if desired.
     if (this.isPaused) {
       this.updateCooldownBar();
       this.updateSpeedUI();
@@ -1009,7 +1031,6 @@ class Game {
     this.updateCooldownBar();
     this.updateSpeedUI();
 
-    // enemy step tick (dynamic)
     this.enemyMoveTimer += deltaTime;
     const moveInterval = this.getEnemyMoveInterval();
     while (this.enemyMoveTimer >= moveInterval) {
@@ -1017,7 +1038,6 @@ class Game {
       this.moveEnemiesTick();
     }
 
-    // enemy spawn tick (dynamic)
     this.enemySpawnTimer += deltaTime;
     const spawnInterval = this.getEnemySpawnInterval();
     while (this.enemySpawnTimer >= spawnInterval) {
@@ -1026,7 +1046,6 @@ class Game {
       if (tile) this.spawnEnemyAtTile(tile.ix, tile.iz);
     }
 
-    // proximity kill → game over
     if (this.timeSinceStart > this.SPAWN_SAFETY_TIME) {
       const playerPos = this.getWorldCenter(this.player);
       const { ix: px, iz: pz } = this.worldToTileXZ(playerPos);
@@ -1036,15 +1055,11 @@ class Game {
       });
       if (danger) {
         this.isGameOver = true;
-        if (!this._shownGameOver) {
-          this._shownGameOver = true;
-          this.showGameOverUI();
-        }
+        if (!this._shownGameOver) { this._shownGameOver = true; this.showGameOverUI(); }
         return;
       }
     }
 
-    // projectiles
     for (let i = this.projectiles.length - 1; i >= 0; --i) {
       const p = this.projectiles[i];
       const step = this.FIREBALL_SPEED * deltaTime;
