@@ -2,13 +2,11 @@ class Game {
   constructor(state) {
     this.state = state;
 
-    // holders
     this.spawnedObjects = [];
     this.collidableObjects = [];
     this.enemies = [];
     this.projectiles = [];
 
-    // constants
     this.TILE_SIZE = 1.0;
     this.GRID_SIZE = 11;
     this.MIN_ENEMY_TILES = 3;
@@ -18,11 +16,9 @@ class Game {
     this.SPAWN_SAFETY_TIME = 0.2;
     this.SHOT_COOLDOWN = 1.5;
 
-    // timers
     this.enemyMoveTimer = 0.0;
     this.enemySpawnTimer = 0.0;
 
-    // difficulty
     this.ENEMY_MOVE_BASE = 1.5;
     this.ENEMY_MOVE_MIN  = 0.9;
     this.ENEMY_SPAWN_BASE = 5.0;
@@ -30,12 +26,10 @@ class Game {
     this.SPEEDUP_STEP = 0.1;
     this.maxDifficultyLocked = false;
 
-    // debug
     this.DEBUG_COLLIDERS = true;
     this._debugBoxes = new Map();
     this._debugUIButton = null;
 
-    // runtime
     this.player = null;
     this.facingDir = vec3.fromValues(0, 0, 1);
     this.isGameOver = false;
@@ -44,11 +38,9 @@ class Game {
     this.timeSinceStart = 0;
     this.lastShotAt = -Infinity;
 
-    // prefabs
     this.fireballPrefab = null;
     this.rookPrefab = null;
 
-    // ui
     this.cooldownBar = null;
     this.cooldownFill = null;
 
@@ -74,12 +66,11 @@ class Game {
     this.continueBtn = null;
     this.resetBtn = null;
 
-    // board align
     this.BOARD_EPSILON_Y = 0.02;
     this.boardTopY = 0.0;
   }
 
-  // gets world position
+  // "gets world position"
   getWorldPos(object) {
     const m = object?.model?.modelMatrix;
     if (m) {
@@ -91,7 +82,7 @@ class Game {
     return vec3.fromValues(p[0], p[1], p[2]);
   }
 
-  // gets world center
+  // "gets world center"
   getWorldCenter(object) {
     const m = object?.model?.modelMatrix;
     const c = object?.centroid || vec3.fromValues(0, 0, 0);
@@ -104,7 +95,7 @@ class Game {
     return vec3.fromValues(p[0] + c[0], p[1] + c[1], p[2] + c[2]);
   }
 
-  // sets world center
+  // "sets world center"
   setWorldCenter(object, worldCenter) {
     const c = object?.centroid || vec3.fromValues(0,0,0);
     if (!object.model) object.model = { position: vec3.create(), rotation: mat4.create(), scale: vec3.fromValues(1,1,1) };
@@ -115,10 +106,10 @@ class Game {
     );
   }
 
-  // gets forward
+  // "gets forward"
   getForwardWorld() { const f = vec3.clone(this.facingDir); vec3.normalize(f, f); return f; }
 
-  // gets fireball muzzle
+  // "gets fireball muzzle"
   getMuzzleWorldPosition() {
     const center = this.getWorldCenter(this.player);
     const forward = this.getForwardWorld();
@@ -133,25 +124,25 @@ class Game {
     return muzzle;
   }
 
-  // world to tile
+  // "world to tile"
   worldToTileXZ(v) { return { ix: Math.round(v[0] / this.TILE_SIZE), iz: Math.round(v[2] / this.TILE_SIZE) }; }
 
-  // tile to world
+  // "tile to world"
   tileToWorldXZ(ix, iz, y) { return vec3.fromValues(ix * this.TILE_SIZE, y, iz * this.TILE_SIZE); }
 
-  // chebyshev distance
+  // "chebyshev distance"
   chebyshevTileDistance(aix, aiz, bix, biz) { return Math.max(Math.abs(aix - bix), Math.abs(aiz - biz)); }
 
-  // grid bounds
+  // "grid bounds"
   gridBounds() { const h = Math.floor(this.GRID_SIZE / 2); return { min: -h, max: h }; }
 
-  // in-bounds
+  // "in-bounds"
   inBounds(ix, iz) { const b=this.gridBounds(); return ix>=b.min && ix<=b.max && iz>=b.min && iz<=b.max; }
 
-  // object tile
+  // "object tile"
   getTileOfObject(obj) { const c = this.getWorldCenter(obj); return this.worldToTileXZ(c); }
 
-  // occupancy
+  // "occupancy"
   isOccupied(ix, iz, except = null) {
     const p = this.getTileOfObject(this.player);
     if (!except || except !== this.player) {
@@ -165,14 +156,14 @@ class Game {
     return false;
   }
 
-  // enemy move to tile
+  // "enemy move to tile"
   moveEnemyToTile(enemy, ix, iz) {
     const curY = this.getWorldCenter(enemy)[1];
     const target = this.tileToWorldXZ(ix, iz, curY);
     this.setWorldCenter(enemy, target);
   }
 
-  // add collider
+  // "add collider"
   addAABBCollider(object, halfExtents) {
     object.collider = {
       type: "AABB",
@@ -183,7 +174,7 @@ class Game {
     this.collidableObjects.push(object);
   }
 
-  // sync collider
+  // "sync collider"
   updateWorldAABB(object) {
     const c = object.collider; if (!c || c.type !== "AABB") return;
     const center = this.getWorldCenter(object);
@@ -192,7 +183,7 @@ class Game {
     c.worldMin[2] = center[2] - c.half[2]; c.worldMax[2] = center[2] + c.half[2];
   }
 
-  // aabb overlap
+  // "aabb overlap"
   aabbIntersect(a, b) {
     return (
       a.worldMin[0] <= b.worldMax[0] && a.worldMax[0] >= b.worldMin[0] &&
@@ -201,7 +192,7 @@ class Game {
     );
   }
 
-  // remove from scene
+  // "remove from scene"
   removeFromScene(object) {
     const i1 = this.state.objects.indexOf(object); if (i1 >= 0) this.state.objects.splice(i1, 1);
     const i2 = this.collidableObjects.indexOf(object); if (i2 >= 0) this.collidableObjects.splice(i2, 1);
@@ -215,7 +206,7 @@ class Game {
     }
   }
 
-  // create visible collider
+  // "create visible collider"
   async createDebugBoxFor(object, kind) {
     if (!this.DEBUG_COLLIDERS || !object?.collider) return null;
     if (this._debugBoxes.has(object)) return this._debugBoxes.get(object);
@@ -241,7 +232,7 @@ class Game {
     return box;
   }
 
-  // update visible collider
+  // "update visible collider"
   updateDebugBox(object) {
     if (!this.DEBUG_COLLIDERS || !object?.collider) return;
     const box = this._debugBoxes.get(object);
@@ -260,7 +251,7 @@ class Game {
     if (Math.abs(dx)+Math.abs(dy)+Math.abs(dz) > 1e-6) box.translate(vec3.fromValues(dx,dy,dz));
   }
 
-  // build cooldown ui
+  // "build cooldown ui"
   createCooldownBarUI() {
     const host = document.createElement("div");
     Object.assign(host.style, {
@@ -299,7 +290,7 @@ class Game {
     this.cooldownFill = fill;
   }
 
-  // update cooldown ui
+  // "update cooldown ui"
   updateCooldownBar() {
     if (!this.cooldownFill) return;
     const t = Math.min(1, Math.max(0, (this.timeSinceStart - this.lastShotAt) / this.SHOT_COOLDOWN));
@@ -308,13 +299,13 @@ class Game {
     this.cooldownFill.style.background = `linear-gradient(90deg, rgb(${g},${g},${g}), rgb(${r},${g},${b}))`;
   }
 
-  // load highscore
+  // "load highscore"
   loadHighScore() { try { const v = localStorage.getItem("cc_highscore"); const n = v ? parseInt(v, 10) : 0; return Number.isFinite(n) ? n : 0; } catch { return 0; } }
 
-  // save highscore
+  // "save highscore"
   saveHighScore() { try { localStorage.setItem("cc_highscore", String(this.highScore)); } catch {} }
 
-  // build score ui
+  // "build score ui"
   createScoreUI() {
     const box = document.createElement("div");
     Object.assign(box.style, {
@@ -381,7 +372,7 @@ class Game {
     this.updateSpeedUI(true);
   }
 
-  // update score ui
+  // "update score ui"
   updateScoreUI() {
     if (!this.scoreText || !this.highText) return;
     const fmt = (n) => n.toString().padStart(3, "0");
@@ -389,7 +380,7 @@ class Game {
     this.highText.textContent  = `High:  ${fmt(this.highScore)}`;
   }
 
-  // update speed ui
+  // "update speed ui"
   updateSpeedUI(force = false) {
     if (!this.speedRowText) return;
     const m = this.getEnemyMoveInterval();
@@ -415,7 +406,7 @@ class Game {
     }
   }
 
-  // add score
+  // "add score"
   addScore(points) {
     if (!points) return;
     this.score += points;
@@ -427,7 +418,7 @@ class Game {
     this.updateSpeedUI();
   }
 
-  // build game over ui
+  // "build game over ui"
   createGameOverUI() {
     const overlay = document.createElement("div");
     Object.assign(overlay.style, {
@@ -481,7 +472,7 @@ class Game {
     this.retryBtn = retry;
   }
 
-  // show game over ui
+  // "show game over ui"
   showGameOverUI() {
     if (!this.gameOverOverlay) this.createGameOverUI();
     const fmt = (n) => n.toString().padStart(3, "0");
@@ -494,7 +485,7 @@ class Game {
     this.gameOverOverlay.style.display = "flex";
   }
 
-  // build pause ui
+  // "build pause ui"
   createPauseUI() {
     const overlay = document.createElement("div");
     Object.assign(overlay.style, {
@@ -550,7 +541,7 @@ class Game {
     this.resetBtn = reset;
   }
 
-  // toggle pause
+  // "toggle pause"
   togglePause(forceValue = null) {
     if (!this.pauseOverlay) this.createPauseUI();
     const next = forceValue === null ? !this.isPaused : !!forceValue;
@@ -559,7 +550,7 @@ class Game {
     this.pauseOverlay.style.display = this.isPaused ? "flex" : "none";
   }
 
-  // ensure transforms
+  // "ensure transforms"
   ensureTransformAPI(obj) {
     if (!obj.model) obj.model = { position: vec3.fromValues(0,0,0), rotation: mat4.create(), scale: vec3.fromValues(1,1,1) };
     if (typeof obj.translate !== "function") {
@@ -576,7 +567,7 @@ class Game {
     }
   }
 
-  // clone prefab
+  // "clone prefab"
   instantiateFromPrefab(prefab, name, worldCenter, scaleVec3) {
     const copyVec3 = (v) => vec3.fromValues(v[0], v[1], v[2]);
     const obj = {
@@ -610,7 +601,7 @@ class Game {
     return obj;
   }
 
-  // colour math helpers
+  // "colour math helpers"
   lerp(a, b, t) { return a + (b - a) * t; }
   mix3(a, b, t) {
     return vec3.fromValues(
@@ -620,7 +611,7 @@ class Game {
     );
   }
 
-  // computes yellow→orange→red gradient
+  // "computes yellow→orange→red gradient"
   getFireGradient(t01) {
     const clamp = (x) => Math.max(0, Math.min(1, x));
     const t = clamp(t01);
@@ -631,7 +622,7 @@ class Game {
     return this.mix3(orange, red, (t - 0.5) / 0.5);
   }
 
-  // applies gradient + flicker
+  // "applies gradient + flicker"
   updateProjectileFireColor(p) {
     const t = Math.max(0, Math.min(1, p.traveled / p.maxRange));
     const base = this.getFireGradient(t);
@@ -644,7 +635,7 @@ class Game {
     p.object.material.alpha = 1.0;
   }
 
-  // spawn fireball
+  // "spawns fireball"
   async spawnFireball(originWorldCenter, dir) {
     let obj;
     if (this.fireballPrefab) {
@@ -670,7 +661,7 @@ class Game {
     return projectile;
   }
 
-  // explode 3x3
+  // "explode 3x3"
   explodeAt(pos) {
     const killed = [];
     for (const enemy of [...this.enemies]) {
@@ -683,10 +674,10 @@ class Game {
     if (killed.length > 0) this.addScore(killed.length * 100);
   }
 
-  // clamp sign
+  // "clamp sign"
   signClamp(v) { return v === 0 ? 0 : (v > 0 ? 1 : -1); }
 
-  // danger tiles
+  // "danger tiles"
   isDangerTile(ix, iz) {
     for (const p of this.projectiles) {
       const pc = this.getWorldCenter(p.object);
@@ -702,7 +693,7 @@ class Game {
     return false;
   }
 
-  // choose enemy step
+  // "choose enemy step"
   chooseEnemyStep(enemy) {
     const eT = this.getTileOfObject(enemy);
     const pT = this.getTileOfObject(this.player);
@@ -733,24 +724,24 @@ class Game {
     return neighbors.length ? neighbors[0].t : eT;
   }
 
-  // speed steps
+  // "speed steps"
   getSpeedupSteps() { return Math.floor(this.score / 1000); }
 
-  // move interval
+  // "move interval"
   getEnemyMoveInterval() {
     if (this.maxDifficultyLocked) return this.ENEMY_MOVE_MIN;
     const steps = this.getSpeedupSteps();
     return Math.max(this.ENEMY_MOVE_MIN, this.ENEMY_MOVE_BASE - steps * this.SPEEDUP_STEP);
   }
 
-  // spawn interval
+  // "spawn interval"
   getEnemySpawnInterval() {
     if (this.maxDifficultyLocked) return this.ENEMY_SPAWN_MIN;
     const steps = this.getSpeedupSteps();
     return Math.max(this.ENEMY_SPAWN_MIN, this.ENEMY_SPAWN_BASE - steps * this.SPEEDUP_STEP);
   }
 
-  // tick enemy moves
+  // "tick enemy moves"
   moveEnemiesTick() {
     for (const enemy of this.enemies) {
       const next = this.chooseEnemyStep(enemy);
@@ -760,7 +751,7 @@ class Game {
     }
   }
 
-  // pick spawn tile
+  // "pick spawn tile"
   findSpawnTile() {
     const b = this.gridBounds();
     const p = this.getTileOfObject(this.player);
@@ -777,7 +768,7 @@ class Game {
     return candidates[r];
   }
 
-  // spawn enemy at tile
+  // "spawn enemy at tile"
   async spawnEnemyAtTile(ix, iz) {
     let obj;
     const y = this.getWorldCenter(this.player)[1];
@@ -818,7 +809,7 @@ class Game {
     if (this.DEBUG_COLLIDERS) await this.createDebugBoxFor(obj, "enemy");
   }
 
-  // bind input
+  // "bind input"
   bindControls() {
     document.addEventListener("keypress", async (e) => {
       if (this.isGameOver || this.isPaused || !this.player) return;
@@ -850,13 +841,13 @@ class Game {
     }, false);
   }
 
-  // move to center
+  // "move to center"
   moveTo(object, worldTargetCenter) { this.setWorldCenter(object, worldTargetCenter); }
 
-  // place player
+  // "place player"
   placePlayerAtGridCenter() { const y = this.getWorldCenter(this.player)[1]; this.moveTo(this.player, vec3.fromValues(0, y, 0)); }
 
-  // relocate enemies
+  // "relocate enemies"
   relocateEnemiesAwayFromPlayer() {
     const bounds = this.gridBounds();
     const pPos = this.getWorldCenter(this.player);
@@ -888,7 +879,7 @@ class Game {
     }
   }
 
-  // toggle colliders
+  // "toggle colliders"
   async setDebugCollidersEnabled(flag) {
     if (flag === this.DEBUG_COLLIDERS) return;
     this.DEBUG_COLLIDERS = flag;
@@ -907,10 +898,10 @@ class Game {
     if (this._debugUIButton) this._debugUIButton.textContent = "Hide Colliders (T)";
   }
 
-  // toggle colliders
+  // "toggle colliders"
   async toggleDebugColliders() { await this.setDebugCollidersEnabled(!this.DEBUG_COLLIDERS); }
 
-  // build ui bundle
+  // "build ui bundle"
   createDebugToggleUI() {
     const btn = document.createElement("button");
     btn.textContent = this.DEBUG_COLLIDERS ? "Hide Colliders (T)" : "Show Colliders (T)";
@@ -931,7 +922,7 @@ class Game {
     this.createPauseUI();
   }
 
-  // detect board top
+  // "detect board top"
   detectBoardTopY() {
     const board = getObject(this.state, "board2");
     if (board && board.model) {
@@ -947,7 +938,7 @@ class Game {
     return 0.0;
   }
 
-  // align object to board
+  // "align object to board"
   alignObjectToBoardTop(object) {
     if (!object) return;
     const halfY = object?.collider?.half?.[1] ?? (object?.model?.scale ? object.model.scale[1] * 0.5 : 0.5);
@@ -958,7 +949,7 @@ class Game {
     this.setWorldCenter(object, next);
   }
 
-  // set max difficulty
+  // "set max difficulty"
   setMaxDifficultyLocked(flag) {
     this.maxDifficultyLocked = !!flag;
     this.enemyMoveTimer = 0.0;
@@ -966,13 +957,21 @@ class Game {
     this.updateSpeedUI(true);
   }
 
-  // toggle max difficulty
+  // "toggle max difficulty"
   toggleMaxDifficulty() { this.setMaxDifficultyLocked(!this.maxDifficultyLocked); }
 
-  // custom hook
+  // "removes scene objects by names"
+  removeSceneObjectsByName(names) {
+    for (const n of names) {
+      const obj = getObject(this.state, n);
+      if (obj) this.removeFromScene(obj);
+    }
+  }
+
+  // "custom hook"
   customMethod() { console.log("Custom method!"); }
 
-  // init
+  // "init"
   async onStart() {
     const objs = this.state.objects || [];
     this.player = getObject(this.state, "pawn") || objs.find(o => (o.name || "").toLowerCase() === "pawn");
@@ -988,6 +987,9 @@ class Game {
     }
     this.rookPrefab = getObject(this.state, "rook") || null;
     if (this.rookPrefab?.model) this.ensureTransformAPI(this.rookPrefab);
+
+    // remove idle objects at origin (+ platform)
+    this.removeSceneObjectsByName(["fire", "projectile", "platform"]);
 
     const defaultHalf = (o) => {
       const s = o?.model?.scale || vec3.fromValues(1, 1, 1);
@@ -1022,7 +1024,7 @@ class Game {
     this.updateSpeedUI(true);
   }
 
-  // per-frame update
+  // "per-frame update"
   onUpdate(deltaTime) {
     if (this.isGameOver) return;
 
