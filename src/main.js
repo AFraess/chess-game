@@ -128,6 +128,7 @@ void main() {
     meshCache: {},
     samplerExists: 0,
     samplerNormExists: 0,
+    firstPerson: false,
   };
 
   state.numLights = state.pointLights.length;

@@ -107,7 +107,7 @@ class Game {
   }
 
   // "gets forward"
-  getForwardWorld() { const f = vec3.clone(this.facingDir); vec3.normalize(f, f); return f; }
+  getForwardWorld() { if (this.state.firstPerson){return this.state.camera.front} else {const f = vec3.clone(this.facingDir); vec3.normalize(f, f); return f; };}
 
   // "gets fireball muzzle"
   getMuzzleWorldPosition() {
@@ -808,18 +808,122 @@ class Game {
 
     if (this.DEBUG_COLLIDERS) await this.createDebugBoxFor(obj, "enemy");
   }
+  getSignatureM(lookDirection) {
+// north
+var signature = '';
+            if (lookDirection[0] >= 0 && lookDirection[2] >= 0) {
+            if (lookDirection[0] < 0.5){
+                signature = 'NE';
+              } else {
+                signature = 'NW';
+              }
+            // east
+            } else if (lookDirection[0] < 0 && lookDirection[2] >= 0){
+              if (lookDirection[0] >= -0.5){
+                signature = 'NE';
+              } else {
+                signature = 'SE';
+              }
+            // west
+            } else if (lookDirection[0] >= 0 && lookDirection[2] < 0) {
+            if (lookDirection[2] >= -0.5){
+                signature = 'NW';
+              } else {
+                signature = 'SW';
+              }
+            // south
+            } else {
+            if (lookDirection[2] >= -0.5){
+                signature = 'SE';
+              } else {
+                signature = 'SW';
+              }
+            }
+            return signature;
+  }
+  moveSignature(signature, speed){
+    if (signature == 'NW'){
+              this.player.translate(vec3.fromValues(speed, 0, 0));
+              this.state.camera.position[0] += speed;
+            } else if (signature == 'NE'){
+              this.player.translate(vec3.fromValues(0, 0, speed));
+              this.state.camera.position[2] += speed;
+            } else if (signature == 'SE'){
+              this.player.translate(vec3.fromValues(-speed, 0, 0));
+              this.state.camera.position[0] -= speed;
+            } else {
+              this.player.translate(vec3.fromValues(0, 0, -speed));
+              this.state.camera.position[2] -= speed;
+            }
+  }
+  twistSignature(signature){
+    if (signature == 'NW'){
+      signature = 'NE';
+    } else if (signature == 'NE'){
+      signature = 'SE';
+    } else if (signature == 'SE'){
+      signature = 'SS';
+    } else {
+      signature = 'NW';
+    }
+    return signature;
+  }
 
   // "bind input"
   bindControls() {
     document.addEventListener("keypress", async (e) => {
       if (this.isGameOver || this.isPaused || !this.player) return;
+      var cam = this.state.camera;
       e.preventDefault();
       switch (e.key) {
-        case "a": this.player.translate(vec3.fromValues(+1 * this.TILE_SIZE, 0, 0)); this.facingDir = vec3.fromValues(+1, 0, 0); break;
-        case "d": this.player.translate(vec3.fromValues(-1 * this.TILE_SIZE, 0, 0)); this.facingDir = vec3.fromValues(-1, 0, 0); break;
-        case "w": this.player.translate(vec3.fromValues(0, 0, +1 * this.TILE_SIZE)); this.facingDir = vec3.fromValues(0, 0, +1); break;
-        case "s": this.player.translate(vec3.fromValues(0, 0, -1 * this.TILE_SIZE)); this.facingDir = vec3.fromValues(0, 0, -1); break;
+        case "a": 
+        if (this.state.firstPerson){
+          this.moveSignature(this.twistSignature(this.getSignatureM(vec3.fromValues(cam.front[0], 0.0, cam.front[2]))), -1 * this.TILE_SIZE);
+        } else {
+          this.player.translate(vec3.fromValues(+1 * this.TILE_SIZE, 0, 0)); this.facingDir = vec3.fromValues(+1, 0, 0);
+          this.fire.translate(vec3.fromValues(+1 * this.TILE_SIZE, 0, 0)); this.facingDir = vec3.fromValues(+1, 0, 0);
+        } break;
+        case "d": 
+        if (this.state.firstPerson){
+          this.moveSignature(this.twistSignature(this.getSignatureM(vec3.fromValues(cam.front[0], 0.0, cam.front[2]))), 1 * this.TILE_SIZE);
+        } else {
+          this.player.translate(vec3.fromValues(-1 * this.TILE_SIZE, 0, 0)); this.facingDir = vec3.fromValues(-1, 0, 0);
+          this.fire.translate(vec3.fromValues(-1 * this.TILE_SIZE, 0, 0)); this.facingDir = vec3.fromValues(-1, 0, 0);
+        } break;
+        case "w": 
+        if (this.state.firstPerson){
+          this.moveSignature(this.getSignatureM(vec3.fromValues(cam.front[0], 0.0, cam.front[2])), 1 * this.TILE_SIZE);
+        } else {
+          this.player.translate(vec3.fromValues(0, 0, +1 * this.TILE_SIZE)); this.facingDir = vec3.fromValues(0, 0, +1);
+          this.fire.translate(vec3.fromValues(0, 0, +1 * this.TILE_SIZE)); this.facingDir = vec3.fromValues(0, 0, +1);
+        } break;
+        case "s":
+        if (this.state.firstPerson){
+          this.moveSignature(this.getSignatureM(vec3.fromValues(cam.front[0], 0.0, cam.front[2])), -1 * this.TILE_SIZE);
+        } else { 
+          this.player.translate(vec3.fromValues(0, 0, -1 * this.TILE_SIZE)); this.facingDir = vec3.fromValues(0, 0, -1);
+          this.fire.translate(vec3.fromValues(0, 0, -1 * this.TILE_SIZE)); this.facingDir = vec3.fromValues(0, 0, -1);
+        } break;
         case " ":
+          var cam = this.state.camera;
+          this.state.firstPerson = !this.state.firstPerson;
+          if (this.state.firstPerson == true){
+            this.fire.translate(vec3.fromValues(0.0, -10.0, 0.0));
+            this.state.camPos = cam.position;
+            this.state.camFro = cam.front;
+
+            cam.position = vec3.fromValues(this.player.model.position[0],this.player.model.position[1],this.player.model.position[2]);
+            cam.position[1] += 2.0;
+            cam.front = vec3.fromValues(-100.0, 0.0, 0.0);
+          } else {
+            this.fire.model.position = vec3.fromValues(this.player.model.position[0], this.player.model.position[1], this.player.model.position[2]);
+            cam.position = this.state.camPos;
+            cam.front = this.state.camFro;
+          }
+          cam.lastX = null;
+          cam.lastY = null;
+          break;
+        case "1":
           if (this.timeSinceStart - this.lastShotAt >= this.SHOT_COOLDOWN) {
             this.lastShotAt = this.timeSinceStart;
             const muzzle = this.getMuzzleWorldPosition();
@@ -839,6 +943,59 @@ class Game {
       if (e.key === "Escape") { e.preventDefault(); this.togglePause(); return; }
       if (e.key === "i" || e.key === "I") { e.preventDefault(); this.toggleMaxDifficulty(); }
     }, false);
+
+    // mouse listener
+    document.addEventListener('mousemove', (e) => {
+      var cam = this.state.camera;
+      // Sensitivity
+      var sense = 0.5;
+      // first person
+      if (this.state.firstPerson){
+        // first case
+      if (cam.lastX == null && cam.lastY == null){
+        cam.lastX = e.clientX;
+        cam.lastY = e.clientY;
+      }
+      // Update
+      cam.pitch += (cam.lastY - e.clientY)*sense;
+      cam.yaw += (e.clientX - cam.lastX)*sense;
+      cam.lastX = e.clientX;
+      cam.lastY = e.clientY;
+
+      cam.pitch = Math.max(-89, Math.min(89, cam.pitch));
+      var myaw = cam.yaw * Math.PI / 180;
+      var mpit = cam.pitch * Math.PI / 180;
+      vec3.normalize(cam.front, vec3.fromValues(Math.cos(myaw)*Math.cos(mpit), Math.sin(mpit), Math.sin(myaw)*Math.cos(mpit)));
+      //this.player.rotate('y', myaw);
+      } else {
+        // first case
+        var cPoint = [0, 0, 0];
+        var cRad = 10;
+        if (cam.lastX == null && cam.lastY == null){
+        cam.lastX = e.clientX;
+        cam.lastY = e.clientY;
+        }
+        // Update
+      cam.pitch += (cam.lastY - e.clientY)*sense;
+      cam.yaw += (e.clientX - cam.lastX)*sense;
+      cam.lastX = e.clientX;
+      cam.lastY = e.clientY;
+
+      cam.pitch = Math.max(-89, Math.min(0, cam.pitch));
+      //console.log(cam.pitch);// = Math.max()
+
+      var myaw = cam.yaw * Math.PI / 180;
+      var mpit = cam.pitch * Math.PI / 180;
+      var rot = vec3.fromValues(Math.cos(myaw)*Math.cos(mpit), Math.sin(mpit), Math.sin(myaw)*Math.cos(mpit));
+      vec3.normalize(rot, rot);
+
+      cam.position[0] = cPoint[0] - rot[0] *cRad;
+      cam.position[1] = cPoint[1] - rot[1] *cRad;
+      cam.position[2] = cPoint[2] - rot[2] *cRad;
+
+      vec3.subtract(cam.front, cPoint, cam.position);
+      vec3.normalize(cam.front, cam.front);
+      }});
   }
 
   // "move to center"
@@ -974,7 +1131,7 @@ class Game {
   // "init"
   async onStart() {
     const objs = this.state.objects || [];
-    this.player = getObject(this.state, "pawn") || objs.find(o => (o.name || "").toLowerCase() === "pawn");
+    this.player = getObject(this.state, "platform") || objs.find(o => (o.name || "").toLowerCase() === "platform");
     if (!this.player) throw new Error("Player (pawn) not found in scene.");
     this.enemies = objs.filter(o => (o.name || "").toLowerCase().startsWith("rook"));
 
@@ -989,7 +1146,9 @@ class Game {
     if (this.rookPrefab?.model) this.ensureTransformAPI(this.rookPrefab);
 
     // remove idle objects at origin (+ platform)
-    this.removeSceneObjectsByName(["fire", "projectile", "platform"]);
+    this.removeSceneObjectsByName(["projectile", "pawn"]);//"fire", "projectile", "platform"]);
+    this.fire = getObject(this.state, "fire");
+    
 
     const defaultHalf = (o) => {
       const s = o?.model?.scale || vec3.fromValues(1, 1, 1);
@@ -1022,6 +1181,9 @@ class Game {
     this.highScore = this.loadHighScore();
     this.updateScoreUI();
     this.updateSpeedUI(true);
+
+    this.player.model.position[1] = 0.0;
+
   }
 
   // "per-frame update"
