@@ -76,7 +76,7 @@
         "normalTexture": { "texture": {}, "name": "defaultNormal.jpg" }
       },
       "type": "mesh",
-      "position": [3, 0, 0],
+      "position": [0, 0, 0],
       "scale": [1, 1, 1],
       "rotation": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
       "rotationEulers": { "x": 0, "y": 0, "z": 0 },
@@ -142,6 +142,26 @@
       "position": [0, -1, 0],
       "scale": [28, 3, 28],
       "rotation": [1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1],
+      "rotationEulers": { "x": 0, "y": 0, "z": 0 },
+      "parent": null,
+      "model": null
+    },
+    {
+      "name": "sphere",
+      "material": {
+        "diffuse": [ 0.5, 0.5, 0.5 ],
+        "ambient": [ 0.10000000149011612, 0.10000000149011612, 0.10000000149011612 ],
+        "specular": [ 0.10000000149011612, 0.10000000149011612, 0.10000000149011612 ],
+        "n": 12,
+        "alpha": 1,
+        "shaderType": 1,
+        "diffuseTexture": { "texture": {}, "name": "craneIconTealInverse.png" },
+        "normalTexture": { "texture": {}, "name": "defaultNormal.jpg" }
+      },
+      "type": "sphere",
+      "position": [ 0, 2, 0 ],
+      "scale": [ 1, 1, 1 ],
+      "rotation": [ 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1, 0, 0, 0, 0, 1 ],
       "rotationEulers": { "x": 0, "y": 0, "z": 0 },
       "parent": null,
       "model": null

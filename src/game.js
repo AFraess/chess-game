@@ -7,7 +7,7 @@ class Game {
     this.enemies = [];
     this.projectiles = [];
 
-    this.TILE_SIZE = 1.0;
+    this.TILE_SIZE = 1.22;
     this.GRID_SIZE = 11;
     this.MIN_ENEMY_TILES = 3;
     this.FIREBALL_SPEED = 6.0 * this.TILE_SIZE;
@@ -43,6 +43,7 @@ class Game {
 
     this.cooldownBar = null;
     this.cooldownFill = null;
+    this.currentWeapon = 0;
 
     this.score = 0;
     this.highScore = 0;
@@ -84,15 +85,13 @@ class Game {
 
   // "gets world center"
   getWorldCenter(object) {
-    const m = object?.model?.modelMatrix;
-    const c = object?.centroid || vec3.fromValues(0, 0, 0);
-    if (m) {
-      const v4 = vec4.fromValues(c[0], c[1], c[2], 1.0);
-      vec4.transformMat4(v4, v4, m);
-      return vec3.fromValues(v4[0], v4[1], v4[2]);
-    }
-    const p = this.getWorldPos(object);
-    return vec3.fromValues(p[0] + c[0], p[1] + c[1], p[2] + c[2]);
+      const p = object?.model?.position || vec3.fromValues(0, 0, 0);
+      const c = object?.centroid || vec3.fromValues(0, 0, 0);
+      return vec3.fromValues(
+          p[0] + c[0],
+          p[1] + c[1],
+          p[2] + c[2]
+      );
   }
 
   // "sets world center"
@@ -125,10 +124,18 @@ class Game {
   }
 
   // "world to tile"
-  worldToTileXZ(v) { return { ix: Math.round(v[0] / this.TILE_SIZE), iz: Math.round(v[2] / this.TILE_SIZE) }; }
+    worldToTileXZ(v) {
+        return {
+            ix: Math.floor(v[0] / this.TILE_SIZE),
+            iz: Math.floor(v[2] / this.TILE_SIZE)
+        };
+    }
 
   // "tile to world"
-  tileToWorldXZ(ix, iz, y) { return vec3.fromValues(ix * this.TILE_SIZE, y, iz * this.TILE_SIZE); }
+  tileToWorldXZ(ix, iz, y) {
+      const half = this.TILE_SIZE * 0.5;
+      return vec3.fromValues(ix * this.TILE_SIZE + half, y, iz * this.TILE_SIZE + half);
+  }
 
   // "chebyshev distance"
   chebyshevTileDistance(aix, aiz, bix, biz) { return Math.max(Math.abs(aix - bix), Math.abs(aiz - biz)); }
@@ -294,9 +301,17 @@ class Game {
   updateCooldownBar() {
     if (!this.cooldownFill) return;
     const t = Math.min(1, Math.max(0, (this.timeSinceStart - this.lastShotAt) / this.SHOT_COOLDOWN));
-    this.cooldownFill.style.width = `${Math.round(t * 100)}%`;
-    const r = 255, g = Math.round(255 * (1 - t)), b = Math.round(255 * (1 - t));
-    this.cooldownFill.style.background = `linear-gradient(90deg, rgb(${g},${g},${g}), rgb(${r},${g},${b}))`;
+      this.cooldownFill.style.width = `${Math.round(t * 100)}%`;
+      //This chunk of code effects the colour of the cooldown bar
+      if (this.currentWeapon == 0) {
+          const r = 255, g = Math.round(255 * (1 - t)), b = Math.round(255 * (1 - t));
+          this.cooldownFill.style.background = `linear-gradient(90deg, rgb(${g},${g},${g}), rgb(${r},${g},${b}))`;
+
+      } else {
+          const g = 255, r = Math.round(255 * (1 - t)), b = Math.round(255 * (1 - t));
+          this.cooldownFill.style.background = `linear-gradient(90deg, rgb(${r},${r},${r}), rgb(${r},${g},${b}))`;
+      }
+    
   }
 
   // "load highscore"
@@ -601,6 +616,8 @@ class Game {
     return obj;
   }
 
+  make
+
   // "colour math helpers"
   lerp(a, b, t) { return a + (b - a) * t; }
   mix3(a, b, t) {
@@ -615,11 +632,30 @@ class Game {
   getFireGradient(t01) {
     const clamp = (x) => Math.max(0, Math.min(1, x));
     const t = clamp(t01);
+    //Place an if condition for the different weapon types.
+
+    /*
     const yellow = vec3.fromValues(1.0, 0.92, 0.18);
     const orange = vec3.fromValues(1.0, 0.55, 0.12);
     const red    = vec3.fromValues(0.92, 0.12, 0.12);
     if (t < 0.5) return this.mix3(yellow, orange, t / 0.5);
     return this.mix3(orange, red, (t - 0.5) / 0.5);
+    */
+
+   if(this.currentWeapon == 1){
+       const green = vec3.fromValues(0.10, 0.85, 0.20);
+       const blue = vec3.fromValues(0.20, 0.45, 1.00);
+       const purple = vec3.fromValues(0.70, 0.20, 0.90);
+       if (t < 0.5) return this.mix3(green, blue, t / 0.5);
+       return this.mix3(blue, purple, (t - 0.5) / 0.5);
+   } else {
+       const yellow = vec3.fromValues(1.0, 0.92, 0.18);
+       const orange = vec3.fromValues(1.0, 0.55, 0.12);
+       const red = vec3.fromValues(0.92, 0.12, 0.12);
+       if (t < 0.5) return this.mix3(yellow, orange, t / 0.5);
+       return this.mix3(orange, red, (t - 0.5) / 0.5);
+   }
+   
   }
 
   // "applies gradient + flicker"
@@ -638,6 +674,11 @@ class Game {
   // "spawns fireball"
   async spawnFireball(originWorldCenter, dir) {
     let obj;
+    if(this.currentWeapon == 0){
+        let size = vec3.fromValues(0.34, 0.34, 0.34);
+    } else {
+        let size = vec3.fromValues(5, 5, 5);
+    }
     if (this.fireballPrefab) {
       const name = `fireball-${Date.now()}`;
       obj = this.instantiateFromPrefab(this.fireballPrefab, name, originWorldCenter, vec3.fromValues(0.42, 0.42, 0.42));
@@ -647,7 +688,7 @@ class Game {
         type: "cube",
         material: { diffuse: vec3.fromValues(1,0.6,0.15), ambient: vec3.fromValues(0.4,0.25,0.08), n: 16, alpha: 1 },
         position: vec3.fromValues(0,0,0),
-        scale: vec3.fromValues(0.34, 0.34, 0.34),
+        scale: size,
       }, this.state);
       this.ensureTransformAPI(obj);
       this.setWorldCenter(obj, originWorldCenter);
@@ -697,9 +738,12 @@ class Game {
   chooseEnemyStep(enemy) {
     const eT = this.getTileOfObject(enemy);
     const pT = this.getTileOfObject(this.player);
+    
     const baseDx = this.signClamp(pT.ix - eT.ix);
     const baseDz = this.signClamp(pT.iz - eT.iz);
-    const cand = { ix: eT.ix + baseDx, iz: eT.iz + baseDz };
+      const cand = { ix: eT.ix + baseDx, iz: eT.iz + baseDz };
+    //console.log(this.getTileOfObject(enemy));
+    //console.log(baseDx, baseDz, cand);
     const valid = (t) => this.inBounds(t.ix, t.iz) && !this.isOccupied(t.ix, t.iz, enemy);
     if (valid(cand) && !this.isDangerTile(cand.ix, cand.iz)) return cand;
 
@@ -756,6 +800,7 @@ class Game {
     const b = this.gridBounds();
     const p = this.getTileOfObject(this.player);
     const candidates = [];
+    
     for (let iz = b.min; iz <= b.max; iz++) {
       for (let ix = b.min; ix <= b.max; ix++) {
         if (this.chebyshevTileDistance(ix, iz, p.ix, p.iz) < this.MIN_ENEMY_TILES) continue;
@@ -765,6 +810,7 @@ class Game {
     }
     if (candidates.length === 0) return null;
     const r = Math.floor(Math.random() * candidates.length);
+    //console.log(candidates[r]);
     return candidates[r];
   }
 
@@ -772,6 +818,7 @@ class Game {
   async spawnEnemyAtTile(ix, iz) {
     let obj;
     const y = this.getWorldCenter(this.player)[1];
+
     const world = this.tileToWorldXZ(ix, iz, y);
 
     if (this.rookPrefab) {
@@ -787,7 +834,7 @@ class Game {
           specular: vec3.fromValues(0.0, 0.0, 0.0),
           n: 8.0, alpha: 1.0,
         },
-        position: vec3.fromValues(world[0], world[1], world[2]),
+        position: vec3.fromValues(world[0], world[2], world[1]),
         scale: vec3.fromValues(1, 1, 1),
       }, this.state);
       this.ensureTransformAPI(obj);
@@ -798,13 +845,17 @@ class Game {
       return [Math.max(0.45 * s[0], 0.45), Math.max(0.45 * s[1], 0.45), Math.max(0.45 * s[2], 0.45)];
     };
 
+    //console.log(obj.model.position);
     this.addAABBCollider(obj, defaultHalf(obj));
     this.enemies.push(obj);
-
-    const worldXZ = this.tileToWorldXZ(ix, iz, 0);
-    const cur = this.getWorldCenter(obj);
-    this.setWorldCenter(obj, vec3.fromValues(worldXZ[0], cur[1], worldXZ[2]));
-    this.alignObjectToBoardTop(obj);
+    
+    //Repeated from world above?
+    //const worldXZ = this.tileToWorldXZ(ix, iz, 0);
+    //const cur = this.getWorldCenter(obj);
+      //-0.8999993801116943 -3.9999992847442627
+    
+    //console.log(xPos + "  =  " + world[0], ix);
+    //console.log(zPos + "  =  " + world[2], iz);
 
     if (this.DEBUG_COLLIDERS) await this.createDebugBoxFor(obj, "enemy");
   }
@@ -815,7 +866,7 @@ class Game {
       if (this.isGameOver || this.isPaused || !this.player) return;
       e.preventDefault();
       switch (e.key) {
-        case "a": this.player.translate(vec3.fromValues(+1 * this.TILE_SIZE, 0, 0)); this.facingDir = vec3.fromValues(+1, 0, 0); break;
+          case "a": this.player.translate(vec3.fromValues(+1 * this.TILE_SIZE, 0, 0)); this.facingDir = vec3.fromValues(+1, 0, 0); break;
         case "d": this.player.translate(vec3.fromValues(-1 * this.TILE_SIZE, 0, 0)); this.facingDir = vec3.fromValues(-1, 0, 0); break;
         case "w": this.player.translate(vec3.fromValues(0, 0, +1 * this.TILE_SIZE)); this.facingDir = vec3.fromValues(0, 0, +1); break;
         case "s": this.player.translate(vec3.fromValues(0, 0, -1 * this.TILE_SIZE)); this.facingDir = vec3.fromValues(0, 0, -1); break;
@@ -827,8 +878,23 @@ class Game {
           }
           break;
         case "t":
+            console.log(this.player.model.position[0], this.player.model.position[2]);
+            console.log(this.getTileOfObject(this.player));
+            console.log(this.tileToWorldXZ(this.getTileOfObject(this.player).ix, this.getTileOfObject(this.player).iz, 1));
+            //console.log(this.getTileOfObject(this.player));
+            break;
         case "T":
           await this.toggleDebugColliders();
+          break;
+        case "/":
+          if(this.currentWeapon == 0){
+              this.currentWeapon = 1;
+              this.SHOT_COOLDOWN = 1.1;
+          } else {
+              this.currentWeapon = 0;
+              this.SHOT_COOLDOWN = 1.5;
+          }
+              
           break;
         default: break;
       }
@@ -845,7 +911,8 @@ class Game {
   moveTo(object, worldTargetCenter) { this.setWorldCenter(object, worldTargetCenter); }
 
   // "place player"
-  placePlayerAtGridCenter() { const y = this.getWorldCenter(this.player)[1]; this.moveTo(this.player, vec3.fromValues(0, y, 0)); }
+  //placePlayerAtGridCenter() { const y = this.getWorldCenter(this.player)[1]; this.moveTo(this.player, vec3.fromValues(0, y, 0)); }
+    placePlayerAtGridCenter() { const y = 0; this.moveTo(this.player, vec3.fromValues(0.5, y, 0)); }
 
   // "relocate enemies"
   relocateEnemiesAwayFromPlayer() {
@@ -968,6 +1035,35 @@ class Game {
     }
   }
 
+  checkEdgesFromFireball(direction, playerPos) {
+      //Board edges in relation to player model position
+      //-7, -10 BR
+      //5.2, 2.1 TL
+      const LEFT_EDGE = -7;
+      const RIGHT_EDGE = 5.2;
+      const TOP_EDGE = 2.1;
+      const BOTTOM_EDGE = -10;
+
+      const x = playerPos[0];
+      const z = playerPos[2];
+
+      if (direction[0] > 0) {
+          return RIGHT_EDGE - x;
+      }
+      if (direction[0] < 0) {
+          return x - LEFT_EDGE;
+      }
+
+      if (direction[2] > 0) {
+          return TOP_EDGE - z;
+      }
+      if (direction[2] < 0) {
+          return z - BOTTOM_EDGE;
+      }
+
+      return 0; // fireball not moving
+  }
+
   // "custom hook"
   customMethod() { console.log("Custom method!"); }
 
@@ -978,11 +1074,14 @@ class Game {
     if (!this.player) throw new Error("Player (pawn) not found in scene.");
     this.enemies = objs.filter(o => (o.name || "").toLowerCase().startsWith("rook"));
 
+    //This code is odd. If we don't need the fireball, get rid of it.
+    //If we do, just set the alpha.
     this.fireballPrefab = getObject(this.state, "fireball") || null;
     if (this.fireballPrefab?.model) {
+
       this.fireballPrefab.material.alpha = 0.0;
       this.fireballPrefab.model.scale = vec3.fromValues(0.0001, 0.0001, 0.0001);
-      this.fireballPrefab.model.position = vec3.fromValues(9999, -9999, 9999);
+      this.fireballPrefab.model.position = vec3.fromValues(0, -10, 0);
       this.ensureTransformAPI(this.fireballPrefab);
     }
     this.rookPrefab = getObject(this.state, "rook") || null;
@@ -1050,20 +1149,24 @@ class Game {
     this.updateCooldownBar();
     this.updateSpeedUI();
 
+    ///*
     this.enemyMoveTimer += deltaTime;
     const moveInterval = this.getEnemyMoveInterval();
     while (this.enemyMoveTimer >= moveInterval) {
       this.enemyMoveTimer -= moveInterval;
       this.moveEnemiesTick();
     }
-
+    
+    ///*
     this.enemySpawnTimer += deltaTime;
     const spawnInterval = this.getEnemySpawnInterval();
     while (this.enemySpawnTimer >= spawnInterval) {
       this.enemySpawnTimer -= spawnInterval;
       const tile = this.findSpawnTile();
+      //console.log(tile.ix, tile.iz);
       if (tile) this.spawnEnemyAtTile(tile.ix, tile.iz);
     }
+    //*/
 
     if (this.timeSinceStart > this.SPAWN_SAFETY_TIME) {
       const playerPos = this.getWorldCenter(this.player);
@@ -1081,21 +1184,52 @@ class Game {
 
     for (let i = this.projectiles.length - 1; i >= 0; --i) {
       const p = this.projectiles[i];
-      const step = this.FIREBALL_SPEED * deltaTime;
-      p.object.translate(vec3.scale(vec3.create(), p.dir, step));
-      p.traveled += step;
-      this.updateWorldAABB(p.object);
-      this.updateProjectileFireColor(p);
+      const playerPos = this.player.model.position
+      if(this.currentWeapon == 0){
+          const step = this.FIREBALL_SPEED * deltaTime;
+          p.object.translate(vec3.scale(vec3.create(), p.dir, step));
+          p.object.model.scale = vec3.fromValues(p.object.model.scale[0] + 0.2, p.object.model.scale[1] + 0.2, p.object.model.scale[2] + 0.2);
+          p.traveled += step;
+          this.updateWorldAABB(p.object);
+          this.updateProjectileFireColor(p);
 
-      let hit = false;
-      for (const e of this.enemies) {
-        if (this.aabbIntersect(p.object.collider, e.collider)) { hit = true; break; }
+          let hit = false;
+          for (const e of this.enemies) {
+              if (this.aabbIntersect(p.object.collider, e.collider)) { hit = true; break; }
+          }
+          if (hit || p.traveled >= p.maxRange) {
+              console.log("Projectile Fired and died?");
+              //p.object.model.scale = vec3.fromValues(100,100,100);
+              //console.log(p.object.model.scale[1]);
+              const impact = this.getWorldCenter(p.object);
+              this.explodeAt(impact);
+              this.removeFromScene(p.object);
+          }
+      } else {
+          const step = this.FIREBALL_SPEED * 4 * deltaTime;
+          p.object.translate(vec3.scale(vec3.create(), p.dir, step));
+          p.object.model.scale = vec3.fromValues(p.object.model.scale[0] - 0.01, p.object.model.scale[1] - 0.01, p.object.model.scale[2] - 0.01);
+          p.traveled += step;
+          this.updateWorldAABB(p.object);
+          this.updateProjectileFireColor(p);
+
+          let hit = false;
+          for (const e of this.enemies) {
+              if (this.aabbIntersect(p.object.collider, e.collider)) { hit = true; break; }
+          }
+          console.log(playerPos);
+          let maxDistance = this.checkEdgesFromFireball(p.dir, playerPos);
+          if (hit || p.traveled >= maxDistance) {
+              console.log("Projectile Fired and died?");
+              console.log(p.dir);
+              //p.object.model.scale = vec3.fromValues(100,100,100);
+              //console.log(p.object.model.scale[1]);
+              const impact = this.getWorldCenter(p.object);
+              this.explodeAt(impact);
+              this.removeFromScene(p.object);
+          }
       }
-      if (hit || p.traveled >= p.maxRange) {
-        const impact = this.getWorldCenter(p.object);
-        this.explodeAt(impact);
-        this.removeFromScene(p.object);
-      }
+      
     }
   }
 }
