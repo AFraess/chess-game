@@ -298,7 +298,6 @@ function drawScene(gl, deltaTime, state) {
 
         // VAO + textures
         gl.bindVertexArray(object.buffers.vao);
-
         if (object.model.texture != null) {
           state.samplerExists = 1;
           gl.activeTexture(gl.TEXTURE0);
